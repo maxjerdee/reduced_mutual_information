@@ -13,6 +13,7 @@ def _compute_I_Hg_Hc(contingency_table):
     :rtype: float, float, float
     """
 
+    # Compute summary information
     n = np.sum(contingency_table)
     ng = np.sum(contingency_table, axis=1)
     nc = np.sum(contingency_table, axis=0)
@@ -30,18 +31,109 @@ def _compute_I_Hg_Hc(contingency_table):
 
     return I, Hg, Hc
 
+def _log_binom(a,b):
+    """log(binomial(a,b)), overflow protected
+    """
+    return gammaln(a + 1) - gammaln(b + 1) - gammaln(a-b+1)
 
+def _log_Omega_EC(rs,cs,useShortDimension=True,symmetrize=False):
+    """Approximate the log of the number of contingency tables with given row and column sums with the EC estimate of Jerdee, Kirkley, Newman (2022) https://arxiv.org/abs/2209.14869
+
+    :param rs: row sums
+    :type rs: list, int
+    :param cs: column sums
+    :type cs: list, int
+    :param useShortDimension: Whether to optimize the encoding by possibly swapping the definitions of rows and columns, defaults to True
+    :type useShortDimension: bool, optional
+    :param symmetrize: Whether to symmetrize the estimate, defaults to False
+    :type symmetrize: bool, optional
+    :return: estimate of log_Omega
+    :rtype: float
+    """
+    rs = np.array(rs)
+    cs = np.array(cs)
+    # Remove any zeros
+    rs = rs[rs > 0]
+    cs = cs[cs > 0]
+    if len(rs) == 0 or len(cs) == 0:
+        return -np.inf # There are no tables
+    if useShortDimension: # Perfomance of the EC estimate is generally improved when there are
+                            # more rows than columns. If this is not the case, swap definitions around
+        if len(rs) >= len(cs):
+            return _log_Omega_EC(rs,cs,useShortDimension=False)
+        else:
+            return _log_Omega_EC(cs,rs,useShortDimension=False)
+    else:
+        if symmetrize:
+            return (_log_Omega_EC(rs,cs,symmetrize=False)+log_Omega_EC(cs,rs,symmetrize=False))/2
+        else:
+            m = len(rs)
+            N = sum(rs)
+            if N == len(cs): # In this case, we may simply return the exact result (equivalent to alpha = inf)
+                return gammaln(N + 1) - sum(gammaln(rs + 1))
+            alphaC = (N**2-N+(N**2-sum(cs**2))/m)/(sum(cs**2)-N)
+            result = -_log_binom(N + m*alphaC - 1, m*alphaC - 1)
+            for r in rs:
+                result += _log_binom(r + alphaC - 1,alphaC-1)
+            for c in cs:
+                result += _log_binom(c + m - 1, m - 1)
+            return result
 
 def _compute_flat_subleading_terms(contingency_table):
     """Compute the subleading contributions to the entropies in the flat reduction.
 
     :param contingency_table: Contingency table of label cooccurrences between the true and candidate labels.
     :type contingency_table: np.array
-    :return: Change in H(g), change in H(c), change in H(g|c), change in H(c|g)
-    :rtype: float, float, float, float
+    :return: Change in H(g), change in H(c), change in H(g|c), change in H(c|g), change in H(g|g), change in H(c|c)
+    :rtype: float, float, float, float, float, float
     """
+    # Compute summary information
+    n = np.sum(contingency_table)
+    ng = np.sum(contingency_table, axis=1)
+    nc = np.sum(contingency_table, axis=0)
+    qg = len(ng)
+    qc = len(nc)
+
+    # H(ng) = H(qg) + H(ng|qg)
+    delta_Hg = np.log(n) + _log_binom(n - 1, qg - 1)
+    delta_Hc = np.log(n) + _log_binom(n - 1, qc - 1)
+    delta_HgGc = np.log(n) + _log_binom(n - 1, qg - 1) + _log_Omega_EC(ng, nc)
+    delta_HcGg = np.log(n) + _log_binom(n - 1, qc - 1) + _log_Omega_EC(nc, ng)
+    delta_HgGg = np.log(n) + _log_binom(n - 1, qg - 1) + _log_Omega_EC(ng, ng)
+    delta_HcGc = np.log(n) + _log_binom(n - 1, qc - 1) + _log_Omega_EC(nc, nc)
     
-    return delta_Hg, delta_Hc, delta_HgGc, delta_HcGg
+    # Convert to base 2
+    delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = delta_Hg/np.log(2), delta_Hc/np.log(2), delta_HgGc/np.log(2), delta_HcGg/np.log(2), delta_HgGg/np.log(2), delta_HcGc/np.log(2)
+
+    return delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc
+
+def _compute_DM_subleading_terms(contingency_table):
+    """Compute the subleading contributions to the entropies in the Dirichlet-multinomial reduction. 
+
+    :param contingency_table: Contingency table of label cooccurrences between the true and candidate labels.
+    :type contingency_table: np.array
+    :return: Change in H(g), change in H(c), change in H(g|c), change in H(c|g), change in H(g|g), change in H(c|c)
+    :rtype: float, float, float, float, float, float
+    """
+    # Compute summary information
+    n = np.sum(contingency_table)
+    ng = np.sum(contingency_table, axis=1)
+    nc = np.sum(contingency_table, axis=0)
+    qg = len(ng)
+    qc = len(nc)
+
+    # H(ng) = H(qg) + H(ng|qg)
+    delta_Hg = np.log(n) + _log_binom(n - 1, qg - 1)
+    delta_Hc = np.log(n) + _log_binom(n - 1, qc - 1)
+    delta_HgGc = np.log(n) + _log_binom(n - 1, qg - 1) + _log_Omega_EC(ng, nc)
+    delta_HcGg = np.log(n) + _log_binom(n - 1, qc - 1) + _log_Omega_EC(nc, ng)
+    delta_HgGg = np.log(n) + _log_binom(n - 1, qg - 1) + _log_Omega_EC(ng, ng)
+    delta_HcGc = np.log(n) + _log_binom(n - 1, qc - 1) + _log_Omega_EC(nc, nc)
+
+    # Convert to base 2
+    delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = delta_Hg/np.log(2), delta_Hc/np.log(2), delta_HgGc/np.log(2), delta_HcGg/np.log(2), delta_HgGg/np.log(2), delta_HcGc/np.log(2)
+
+    return delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc
 
 def get_contingency_table(true_labels, candidate_labels):
     """Generate the contingency table for the true and candidate labels (uses pd.crosstab)
@@ -91,13 +183,46 @@ def compute_RMI_from_contingency_table(contingency_table, reduction='DM', normal
     # Computing the other unreduced information costs from this information
     HgGc = Hg - I # H(g|c)
     HcGg = Hc - I # H(c|g)
+    HgGg = 0 # H(g|g)
+    HcGc = 0 # H(c|c)
 
     if verbose:
-        print(f"Unreduced mutual information (bits): I = {I:.3f}, Entropy of the true labels H(g) = {Hg:.3f}, Entropy of the claimed labels H(c) = {Hc:.3f}")
+        print(f"Unreduced mutual information (bits): I = {I:.3f}")
+        print(f"Unreduced entropies (bits): H(g) = {Hg:.3f}, H(c) = {Hc:.3f}")
         print(f"Unreduced conditional entropies (bits): H(g|c) = {HgGc:.3f}, H(c|g) = {HcGg:.3f}")
     
+    if reduction == 'none':
+        delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = 0, 0, 0, 0, 0, 0
+    if reduction == 'flat':
+        delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = _compute_flat_subleading_terms(contingency_table)
+    if reduction == 'DM':
+        delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = _compute_DM_subleading_terms(contingency_table)
     
-    RMI = 0
+    if verbose:
+        print(f"Subleading terms in the entropies: delta_H(g) = {delta_Hg:.3f}, delta_H(c) = {delta_Hc:.3f}, delta_H(g|c) = {delta_HgGc:.3f}, delta_H(c|g) = {delta_HcGg:.3f}, delta_H(g|g) = {delta_HgGg:.3f}, delta_H(c|c) = {delta_HcGc:.3f}")
+
+    # Adjust the leading behavior with the subleading terms
+    Hg += delta_Hg
+    Hc += delta_Hc
+    HgGc += delta_HgGc
+    HcGg += delta_HcGg
+    HgGg += delta_HgGg
+    HcGc += delta_HcGc
+
+    # Compute the reduced mutual information(s)
+    RMI_g_c = Hg - HgGc
+    RMI_c_g = Hc - HcGg
+    RMI_g_g = Hg - HgGg
+    RMI_c_c = Hc - HcGc
+
+    # (Potentially) normalize the mutual information
+    if normalization == 'none':
+        RMI = RMI_g_c # Note that we do not symmetrize the mutual information in this case
+    if normalization == 'asymmetric':
+        RMI = RMI_g_c/RMI_g_g
+    if normalization == 'symmetric':
+        RMI = (RMI_g_c + RMI_c_g)/(RMI_g_g + RMI_c_c)
+
     return RMI
 
 def compute_RMI(true_labels, candidate_labels, reduction='DM', normalization='asymmetric', verbose=False):
