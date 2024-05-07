@@ -169,6 +169,7 @@ def compute_RMI_from_contingency_table(contingency_table, reduction='DM', normal
     if verbose:
         print("Contingency table:")
         print(contingency_table)
+        print()
 
     if type(contingency_table) == pd.DataFrame:
         contingency_table = contingency_table.to_numpy()
@@ -187,9 +188,10 @@ def compute_RMI_from_contingency_table(contingency_table, reduction='DM', normal
     HcGc = 0 # H(c|c)
 
     if verbose:
-        print(f"Unreduced mutual information (bits): I = {I:.3f}")
+        print(f"Unreduced mutual information (bits): I(g;c) = {I:.3f}")
         print(f"Unreduced entropies (bits): H(g) = {Hg:.3f}, H(c) = {Hc:.3f}")
         print(f"Unreduced conditional entropies (bits): H(g|c) = {HgGc:.3f}, H(c|g) = {HcGg:.3f}")
+        print()
     
     if reduction == 'none':
         delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = 0, 0, 0, 0, 0, 0
@@ -199,7 +201,9 @@ def compute_RMI_from_contingency_table(contingency_table, reduction='DM', normal
         delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = _compute_DM_subleading_terms(contingency_table)
     
     if verbose:
-        print(f"Subleading terms in the entropies: delta_H(g) = {delta_Hg:.3f}, delta_H(c) = {delta_Hc:.3f}, delta_H(g|c) = {delta_HgGc:.3f}, delta_H(c|g) = {delta_HcGg:.3f}, delta_H(g|g) = {delta_HgGg:.3f}, delta_H(c|c) = {delta_HcGc:.3f}")
+        print(f"Subleading terms in the entropies:")
+        print(f"delta_H(g) = {delta_Hg:.3f}, delta_H(c) = {delta_Hc:.3f}, delta_H(g|c) = {delta_HgGc:.3f}, delta_H(c|g) = {delta_HcGg:.3f}, delta_H(g|g) = {delta_HgGg:.3f}, delta_H(c|c) = {delta_HcGc:.3f}")
+        print()
 
     # Adjust the leading behavior with the subleading terms
     Hg += delta_Hg
@@ -215,6 +219,12 @@ def compute_RMI_from_contingency_table(contingency_table, reduction='DM', normal
     RMI_g_g = Hg - HgGg
     RMI_c_c = Hc - HcGc
 
+    if verbose:
+        print(f"Reduced mutual information (bits): I(g;c) = {RMI_g_c:.3f}")
+        print(f"Full entropies (bits): H(g) = {Hg:.3f}, H(c) = {Hc:.3f}")
+        print(f"Full conditional entropies (bits): H(g|c) = {HgGc:.3f}, H(c|g) = {HcGg:.3f}")
+        print()
+
     # (Potentially) normalize the mutual information
     if normalization == 'none':
         RMI = RMI_g_c # Note that we do not symmetrize the mutual information in this case
@@ -222,6 +232,9 @@ def compute_RMI_from_contingency_table(contingency_table, reduction='DM', normal
         RMI = RMI_g_c/RMI_g_g
     if normalization == 'symmetric':
         RMI = (RMI_g_c + RMI_c_g)/(RMI_g_g + RMI_c_c)
+
+    if verbose:
+        print(f"Normalized reduced mutual information NMI(g;c) = {RMI:.3f}")
 
     return RMI
 
