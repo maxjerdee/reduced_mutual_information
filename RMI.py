@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 from scipy.special import gammaln
+from scipy.optimize import minimize_scalar
 
 def _compute_I_Hg_Hc(contingency_table):
     """Compute the unreduced microcanonical mutual information and entropies of the ground truth and candidate labelings.
@@ -36,7 +37,7 @@ def _log_binom(a,b):
     """
     return gammaln(a + 1) - gammaln(b + 1) - gammaln(a-b+1)
 
-def _log_Omega_EC(rs,cs,useShortDimension=True,symmetrize=False):
+def _log_Omega_EC(rs,cs,useShortDimension=False,symmetrize=False):
     """Approximate the log of the number of contingency tables with given row and column sums with the EC estimate of Jerdee, Kirkley, Newman (2022) https://arxiv.org/abs/2209.14869
 
     :param rs: row sums
@@ -107,7 +108,44 @@ def _compute_flat_subleading_terms(contingency_table):
 
     return delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc
 
-def _compute_DM_subleading_terms(contingency_table):
+def _H_ng_G_alpha(ng, alpha):
+    """Compute the entropy of the ground truth group sizes given the parameter alpha
+
+    :param ng: Ground truth group sizes
+    :type ng: list
+    :param alpha: Dirichlet-multinomial parameter
+    :type alpha: float
+    :return: Entropy of the ground truth group sizes
+    :rtype: float
+    """
+    n = np.sum(ng)
+    q = len(ng)
+    H_ng = _log_binom(n + q*alpha - 1, q*alpha - 1)
+    for r in range(q):
+        H_ng -= _log_binom(ng[r] + alpha - 1, alpha - 1)
+    return H_ng
+
+def _H_ngc_G_nc_alpha(ngc, alpha):
+    """Compute the entropy of the contingency table given the column sums nc and the parameter alpha
+
+    :param ngc: Contingency table
+    :type ngc: np.array
+    :param alpha: Dirichlet-multinomial parameter
+    :type alpha: float
+    :return: Entropy of the Contingency table
+    :rtype: float
+    """
+    qg = ngc.shape[0]
+    qc = ngc.shape[1]
+    nc = np.sum(ngc, axis=0)
+    H_ngc = 0
+    for s in range(qc):
+        H_ngc += _log_binom(nc[s] + qg*alpha - 1, qg*alpha - 1)
+        for r in range(qg):
+            H_ngc -= _log_binom(ngc[r,s] + alpha - 1, alpha - 1)
+    return H_ngc
+
+def _compute_DM_subleading_terms(contingency_table,verbose=False):
     """Compute the subleading contributions to the entropies in the Dirichlet-multinomial reduction. 
 
     :param contingency_table: Contingency table of label cooccurrences between the true and candidate labels.
@@ -122,13 +160,58 @@ def _compute_DM_subleading_terms(contingency_table):
     qg = len(ng)
     qc = len(nc)
 
-    # H(ng) = H(qg) + H(ng|qg)
-    delta_Hg = np.log(n) + _log_binom(n - 1, qg - 1)
-    delta_Hc = np.log(n) + _log_binom(n - 1, qc - 1)
-    delta_HgGc = np.log(n) + _log_binom(n - 1, qg - 1) + _log_Omega_EC(ng, nc)
-    delta_HcGg = np.log(n) + _log_binom(n - 1, qc - 1) + _log_Omega_EC(nc, ng)
-    delta_HgGg = np.log(n) + _log_binom(n - 1, qg - 1) + _log_Omega_EC(ng, ng)
-    delta_HcGc = np.log(n) + _log_binom(n - 1, qc - 1) + _log_Omega_EC(nc, nc)
+    # Diagonal tables resulting from the comparison of a labeling against itself
+    ngg = np.diag(ng)
+    ncc = np.diag(nc)
+
+    # Optimizations over the Dirichlet-multiomial parameter alpha for the entropy of group size vectors and the contingency tables
+    # Note that in the original work we use a slightly different numerical optimization scheme
+    min_alpha = 0.0001
+    max_alpha = 10000
+
+    # H(ng|alpha)
+    def f(alpha):
+        return _H_ng_G_alpha(ng, alpha)
+    H_ng_G_alpha = minimize_scalar(f,bounds=(min_alpha,max_alpha)).fun
+
+    if verbose:
+        print(f"alpha parameter used to transmit ng: {minimize_scalar(f,bounds=(min_alpha,max_alpha)).x:.3f}")
+
+    # H(nc|alpha)
+    def f(alpha):
+        return _H_ng_G_alpha(nc, alpha)
+    H_nc_G_alpha = minimize_scalar(f,bounds=(min_alpha,max_alpha)).fun
+    
+    # H(ngc|nc,alpha)
+    def f(alpha):
+        return _H_ngc_G_nc_alpha(contingency_table, alpha)
+    H_ngc_G_nc_alpha = minimize_scalar(f,bounds=(min_alpha,max_alpha)).fun
+
+    if verbose:
+        print(f"alpha parameter used to transmit ngc: {minimize_scalar(f,bounds=(min_alpha,max_alpha)).x:.3f}")
+        print()
+    
+    # H(ngc|ng,alpha)
+    def f(alpha):
+        return _H_ngc_G_nc_alpha(contingency_table.T, alpha)
+    H_ncg_G_ng_alpha = minimize_scalar(f,bounds=(min_alpha,max_alpha)).fun
+
+    # H(ngg|ng,alpha)
+    def f(alpha):
+        return _H_ngc_G_nc_alpha(ngg, alpha)
+    H_ngg_G_ng_alpha = minimize_scalar(f,bounds=(min_alpha,max_alpha)).fun
+    
+    # H(ncc|nc,alpha)
+    def f(alpha):
+        return _H_ngc_G_nc_alpha(ncc, alpha)
+    H_ncc_G_nc_alpha = minimize_scalar(f,bounds=(min_alpha,max_alpha)).fun
+
+    delta_Hg = np.log(n) + H_ng_G_alpha
+    delta_Hc = np.log(n) + H_nc_G_alpha
+    delta_HgGc = np.log(n) + H_ngc_G_nc_alpha
+    delta_HcGg = np.log(n) + H_ncg_G_ng_alpha
+    delta_HgGg = np.log(n) + H_ngg_G_ng_alpha
+    delta_HcGc = np.log(n) + H_ncc_G_nc_alpha
 
     # Convert to base 2
     delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = delta_Hg/np.log(2), delta_Hc/np.log(2), delta_HgGc/np.log(2), delta_HcGg/np.log(2), delta_HgGg/np.log(2), delta_HcGc/np.log(2)
@@ -198,7 +281,7 @@ def compute_RMI_from_contingency_table(contingency_table, reduction='DM', normal
     if reduction == 'flat':
         delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = _compute_flat_subleading_terms(contingency_table)
     if reduction == 'DM':
-        delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = _compute_DM_subleading_terms(contingency_table)
+        delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc = _compute_DM_subleading_terms(contingency_table,verbose=verbose)
     
     if verbose:
         print(f"Subleading terms in the entropies:")

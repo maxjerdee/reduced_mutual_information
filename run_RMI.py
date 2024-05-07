@@ -22,3 +22,4 @@ true_labels = label_pairs[:,0]
 candidate_labels = label_pairs[:,1]
 
 print(compute_RMI(true_labels, candidate_labels, reduction='DM', normalization='asymmetric', verbose=True))
+print(compute_RMI(true_labels, candidate_labels, reduction='flat', normalization='asymmetric', verbose=True))

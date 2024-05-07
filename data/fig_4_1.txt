@@ -1,0 +1,9 @@
+red A
+red D
+red G
+green B
+green E
+green H
+blue C
+blue F
+blue I
