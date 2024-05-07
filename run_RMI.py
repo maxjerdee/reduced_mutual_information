@@ -21,6 +21,4 @@ label_pairs = np.loadtxt(filename, dtype='str')
 true_labels = label_pairs[:,0]
 candidate_labels = label_pairs[:,1]
 
-print(get_contingency_table(true_labels,candidate_labels))
-
 print(compute_RMI(true_labels, candidate_labels, reduction='DM', normalization='asymmetric', verbose=True))
