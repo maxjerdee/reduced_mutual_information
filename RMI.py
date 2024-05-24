@@ -1,5 +1,7 @@
 # Script to compute the reduced mutual information
 
+# Written by Max Jerdee  12 MAY 2024
+
 import numpy as np
 import pandas as pd
 from scipy.special import gammaln
@@ -218,13 +220,13 @@ def _compute_DM_subleading_terms(contingency_table,verbose=False):
 
     return delta_Hg, delta_Hc, delta_HgGc, delta_HcGg, delta_HgGg, delta_HcGc
 
-def get_contingency_table(true_labels, candidate_labels):
-    """Generate the contingency table for the true and candidate labels (uses pd.crosstab)
+def get_contingency_table(candidate_labels, true_labels):
+    """Generate the contingency table for the candidate and true labels (uses pd.crosstab)
 
-    :param true_labels: True labels of the objects
-    :type true_labels: list
     :param candidate_labels: Candidate labels of the objects
     :type candidate_labels: list
+    :param true_labels: True labels of the objects
+    :type true_labels: list
     :return: DataFrame with the contingency table
     :rtype: pd.DataFrame
     """
@@ -321,13 +323,13 @@ def compute_RMI_from_contingency_table(contingency_table, reduction='DM', normal
 
     return RMI
 
-def compute_RMI(true_labels, candidate_labels, reduction='DM', normalization='asymmetric', verbose=False):
+def compute_RMI(candidate_labels, true_labels, reduction='DM', normalization='asymmetric', verbose=False):
     """Compute the reduced mutual information between the true and candidate labels. Returned in bits (log base 2) if unnormalized.
 
-    :param true_labels: True labels of the objects
-    :type true_labels: list
     :param candidate_labels: Candidate labels of the objects
     :type candidate_labels: list
+    :param true_labels: True labels of the objects
+    :type true_labels: list
     :param reduction: Type of reduction of the mutual information, defaults to 'DM'. Options: {'DM', 'flat', 'none'}
     :type reduction: str, optional
     :param normalization: Type of normalization of the mutual information, defaults to 'asymmetric'. Options: {'asymmetric', 'symmetric', 'none'}
